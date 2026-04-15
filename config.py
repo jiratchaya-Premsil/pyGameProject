@@ -1,0 +1,11 @@
+WIDTH = 1000
+HEIGHT = 700
+FPS = 60
+
+GRID_SIZE = 20
+
+#tiles tpes
+EMPTY = 0
+WALKABLE = 1
+STORE = 2
+ESCALATOR = 3
