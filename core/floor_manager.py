@@ -11,7 +11,8 @@ class FloorManager:
         return [[EMPTY for _ in range(cols)] for _ in range(rows)]
 
     def add_floor(self):
-        self.floors.append(self.create_floor())
+        self.floors.insert(self.current_floor + 1, self.create_floor())
+        self.current_floor += 1
     def switch_floor(self,index):
         if 0 <= index < len(self.floors):
             self.current_floor = index

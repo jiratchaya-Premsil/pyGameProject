@@ -16,10 +16,14 @@ class App:
         self.boids = BoidManager(self.floor_manager)
 
         self.running = True
-        self.show_simulation = False
+        self.show_simulation = True  # Start with simulation enabled
         self.font = pygame.font.SysFont("consolas", 20)
 
         self.show_grid = True
+
+        self.add_floor_button = pygame.Rect(10, 40 + 4 * 25, 125, 30)
+        self.prev_floor_button = pygame.Rect(130, 40 + 4 * 25, 125, 30)
+        self.next_floor_button = pygame.Rect(250, 40 + 4 * 25, 125, 30)
 
     def run(self):
         while self.running:
@@ -53,9 +57,25 @@ class App:
                     min(self.floor_manager.current_floor,
                         len(self.floor_manager.floors)-1)
                 )
+
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if self.add_floor_button.collidepoint(event.pos):
+                    self.floor_manager.add_floor()
+                elif self.prev_floor_button.collidepoint(event.pos):
+                    if self.floor_manager.current_floor > 0:
+                        self.floor_manager.current_floor -= 1
+                elif self.next_floor_button.collidepoint(event.pos):
+                    if self.floor_manager.current_floor < len(self.floor_manager.floors) - 1:
+                        self.floor_manager.current_floor += 1
     def update(self):
         if self.show_simulation:
             self.boids.update()
+
+        # Decrement error timer
+        if self.editor.error_timer > 0:
+            self.editor.error_timer -= 1
+        else:
+            self.editor.error_message = None
 
     def draw(self):
         self.screen.fill((30, 30, 30))
@@ -72,21 +92,40 @@ class App:
 
     def draw_ui(self):
 
-        floor_text = f"Floor: {self.floor_manager.current_floor}"
-
+        floor_text = f"Floor: {self.floor_manager.current_floor + 1}"
+        Max_FloorText = f"Max Floor: {len(self.floor_manager.floors)}"
         tile_names = {
             0: "EMPTY",
             1: "WALKABLE",
             2: "STORE",
-            3: "ESCALATOR"
+            3: "ESCALATOR_UP",
+            4: "ESCALATOR_DOWN",
+            5: "DOOR"
         }
 
         tile_text = f"Tile: {tile_names.get(self.editor.current_tile, 'UNKNOWN')}"
         grid_text = f"Grid: {'ON' if self.show_grid else 'OFF'}"
-        sim_text = f"Simulation: {'ON' if self.show_simulation else 'OFF'}"
+        sim_text = f"Simulation: {'ON' if self.show_simulation else 'OFF'} ({len(self.boids.boids)} boids)"
 
-        texts = [floor_text, tile_text, grid_text, sim_text]
+        texts = [floor_text, Max_FloorText, tile_text, grid_text, sim_text]
 
         for i, txt in enumerate(texts):
             surface = self.font.render(txt, True, (255,255,255))
             self.screen.blit(surface, (10, 10 + i*25))
+
+        pygame.draw.rect(self.screen, (100, 100, 100), self.add_floor_button)
+        button_text = self.font.render("Add Floor", True, (255, 255, 255))
+        self.screen.blit(button_text, (self.add_floor_button.x + 5, self.add_floor_button.y + 5))
+
+        pygame.draw.rect(self.screen, (100, 100, 100), self.prev_floor_button)
+        prev_text = self.font.render("Prev Floor", True, (255, 255, 255))
+        self.screen.blit(prev_text, (self.prev_floor_button.x + 5, self.prev_floor_button.y + 5))
+
+        pygame.draw.rect(self.screen, (100, 100, 100), self.next_floor_button)
+        next_text = self.font.render("Next Floor", True, (255, 255, 255))
+        self.screen.blit(next_text, (self.next_floor_button.x + 5, self.next_floor_button.y + 5))
+
+        # Display error message if any
+        if self.editor.error_message:
+            error_surface = self.font.render(self.editor.error_message, True, (255, 0, 0))
+            self.screen.blit(error_surface, (10, HEIGHT - 30))
