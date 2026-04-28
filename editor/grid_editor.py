@@ -67,6 +67,12 @@ class GridEditor:
             return
 
         tile = self.current_tile
+        
+        # Not placing entrances/exits on floor > 1
+        if tile in (MALL_ENTRANCE, MALL_EXIT) and self.floor_manager.current_floor > 0:
+            self.error_message = "ERROR: Entrances/exits only allowed on floor 1"
+            self.error_timer = 120
+            return
 
         # Nothing to do if tile is the same
         if grid[row][col] == tile:
