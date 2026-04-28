@@ -1,42 +1,41 @@
 import pygame
 from config import *
 
-class GridEditior:
-    def __init__(self,floor_manager):
+
+class GridEditor:
+    def __init__(self, floor_manager, store_manager):
         self.floor_manager = floor_manager
-        self.current_tile = WALKABLE
+        self.store_manager = store_manager
+        self.current_tile = PATH
         self.dragging = False
         self.start_pos = None
         self.end_pos = None
         self.error_message = None
         self.error_timer = 0
 
+    # ------------------------------------------------------------------
+    # Event handling
+    # ------------------------------------------------------------------
     def handle_event(self, event):
         keys = pygame.key.get_pressed()
         mouse_pressed = pygame.mouse.get_pressed()
 
-        # ------------------------
-        # START DRAG (Shift only)
-        # ------------------------
+        # Start drag (Shift + LMB)
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
                 self.dragging = True
                 self.start_pos = pygame.mouse.get_pos()
+            else:
+                self.paint()
 
-        # ------------------------
-        # DRAGGING RECTANGLE
-        # ------------------------
+        # Update drag preview or freehand paint
         if event.type == pygame.MOUSEMOTION:
             if self.dragging:
                 self.end_pos = pygame.mouse.get_pos()
-
-            # 🎯 NEW: draw while holding mouse (no Shift)
-            elif mouse_pressed[0]:  # left mouse held
+            elif mouse_pressed[0]:
                 self.paint()
 
-        # ------------------------
-        # RELEASE = fill rectangle
-        # ------------------------
+        # Release drag → fill rectangle
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             if self.dragging:
                 self.end_pos = pygame.mouse.get_pos()
@@ -45,143 +44,151 @@ class GridEditior:
                 self.start_pos = None
                 self.end_pos = None
 
-        # ------------------------
-        # TILE SWITCHING
-        # ------------------------
+        # Tile selection keys
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_1:
-                self.current_tile = WALKABLE
-            if event.key == pygame.K_2:
-                self.current_tile = STORE
-            if event.key == pygame.K_3:
-                self.current_tile = ESCALATOR_UP
-            if event.key == pygame.K_4:
-                self.current_tile = ESCALATOR_DOWN
-            if event.key == pygame.K_5:
-                self.current_tile = DOOR
-            if event.key == pygame.K_5:
-                self.current_tile = DOOR
+            tile_keys = {
+                pygame.K_0: EMPTY,
+                pygame.K_1: PATH,
+                pygame.K_2: STORE,
+                pygame.K_3: ESCALATOR_UP,
+                pygame.K_4: ESCALATOR_DOWN,
+                pygame.K_5: MALL_ENTRANCE,
+                pygame.K_6: MALL_EXIT,
+            }
+            if event.key in tile_keys:
+                self.current_tile = tile_keys[event.key]
 
-    def validate_and_place_escalator(self, row, col, tile_type):
-        """Validate escalator placement and place corresponding escalator on adjacent floor if valid."""
+    # ------------------------------------------------------------------
+    # Tile placement
+    # ------------------------------------------------------------------
+    def _place_tile(self, grid, row, col):
+        """Place the current tile at (row, col), overwriting whatever is there."""
+        if not (0 <= row < len(grid) and 0 <= col < len(grid[0])):
+            return
+
+        tile = self.current_tile
+
+        # Nothing to do if tile is the same
+        if grid[row][col] == tile:
+            return
+
+        # Clean up paired escalator on adjacent floor before overwriting
+        existing = grid[row][col]
+        if existing == ESCALATOR_UP:
+            self._clear_paired_escalator(row, col, ESCALATOR_UP)
+        elif existing == ESCALATOR_DOWN:
+            self._clear_paired_escalator(row, col, ESCALATOR_DOWN)
+
+        # Place new tile
+        if tile in (ESCALATOR_UP, ESCALATOR_DOWN):
+            if self._validate_and_pair_escalator(row, col, tile):
+                grid[row][col] = tile
+        else:
+            grid[row][col] = tile
+
+    def _validate_and_pair_escalator(self, row, col, tile_type):
+        """Check adjacent floor exists, stamp the paired escalator there. Returns success."""
         current_floor = self.floor_manager.current_floor
         floors = self.floor_manager.floors
 
         if tile_type == ESCALATOR_UP:
-            # Check if there's a higher floor
             if current_floor >= len(floors) - 1:
-                self.error_message = "ERROR: No floor above to place ESCALATOR_UP"
+                self.error_message = "ERROR: No floor above for ESCALATOR_UP"
                 self.error_timer = 120
                 return False
-            # Place ESCALATOR_DOWN on the upper floor at the same position
-            upper_floor = floors[current_floor + 1]
-            if 0 <= row < len(upper_floor) and 0 <= col < len(upper_floor[0]):
-                upper_floor[row][col] = ESCALATOR_DOWN
-            return True
-
-        elif tile_type == ESCALATOR_DOWN:
-            # Check if there's a lower floor
+            target_floor = floors[current_floor + 1]
+            paired_tile = ESCALATOR_DOWN
+        else:  # ESCALATOR_DOWN
             if current_floor <= 0:
-                self.error_message = "ERROR: No floor below to place ESCALATOR_DOWN"
+                self.error_message = "ERROR: No floor below for ESCALATOR_DOWN"
                 self.error_timer = 120
                 return False
-            # Place ESCALATOR_UP on the lower floor at the same position
-            lower_floor = floors[current_floor - 1]
-            if 0 <= row < len(lower_floor) and 0 <= col < len(lower_floor[0]):
-                lower_floor[row][col] = ESCALATOR_UP
-            return True
+            target_floor = floors[current_floor - 1]
+            paired_tile = ESCALATOR_UP
+
+        if 0 <= row < len(target_floor) and 0 <= col < len(target_floor[0]):
+            target_floor[row][col] = paired_tile
 
         return True
 
-    def fill_rect(self):
-        grid = self.floor_manager.get_current()
-
-        x1, y1 = self.start_pos
-        x2, y2 = self.end_pos
-
-        x1 //= GRID_SIZE
-        y1 //= GRID_SIZE
-        x2 //= GRID_SIZE
-        y2 //= GRID_SIZE
-
-        min_x = min(x1, x2)
-        max_x = max(x1, x2)
-        min_y = min(y1, y2)
-        max_y = max(y1, y2)
-
-        for y in range(min_y, max_y + 1):
-            for x in range(min_x, max_x + 1):
-                if 0 <= y < len(grid) and 0 <= x < len(grid[0]):
-                    # Only modify EMPTY tiles when using fill_rect
-                    if grid[y][x] == EMPTY:
-                        if self.current_tile == ESCALATOR_UP or self.current_tile == ESCALATOR_DOWN:
-                            if self.validate_and_place_escalator(y, x, self.current_tile):
-                                grid[y][x] = self.current_tile
-                        else:
-                            grid[y][x] = self.current_tile
-
-    def remove_escalators_from_adjacent_floors(self, row, col):
-        """Remove escalators from adjacent floors at the same position."""
+    def _clear_paired_escalator(self, row, col, tile_type):
+        """Remove the paired escalator tile from the adjacent floor."""
         current_floor = self.floor_manager.current_floor
         floors = self.floor_manager.floors
 
-        # Check and remove ESCALATOR_DOWN on floor above
-        if current_floor < len(floors) - 1:
-            upper_floor = floors[current_floor + 1]
-            if 0 <= row < len(upper_floor) and 0 <= col < len(upper_floor[0]):
-                if upper_floor[row][col] == ESCALATOR_DOWN:
-                    upper_floor[row][col] = WALKABLE
+        if tile_type == ESCALATOR_UP and current_floor < len(floors) - 1:
+            target_floor = floors[current_floor + 1]
+            if 0 <= row < len(target_floor) and 0 <= col < len(target_floor[0]):
+                if target_floor[row][col] == ESCALATOR_DOWN:
+                    target_floor[row][col] = EMPTY
 
-        # Check and remove ESCALATOR_UP on floor below
-        if current_floor > 0:
-            lower_floor = floors[current_floor - 1]
-            if 0 <= row < len(lower_floor) and 0 <= col < len(lower_floor[0]):
-                if lower_floor[row][col] == ESCALATOR_UP:
-                    lower_floor[row][col] = WALKABLE
+        elif tile_type == ESCALATOR_DOWN and current_floor > 0:
+            target_floor = floors[current_floor - 1]
+            if 0 <= row < len(target_floor) and 0 <= col < len(target_floor[0]):
+                if target_floor[row][col] == ESCALATOR_UP:
+                    target_floor[row][col] = EMPTY
 
+    # ------------------------------------------------------------------
+    # Paint / fill  (rescan stores after every edit)
+    # ------------------------------------------------------------------
     def paint(self):
         mx, my = pygame.mouse.get_pos()
         grid = self.floor_manager.get_current()
-        col = mx // GRID_SIZE
-        row = my // GRID_SIZE
-        if 0 <= row < len(grid) and 0 <= col < len(grid[0]):
-            if self.current_tile == ESCALATOR_UP or self.current_tile == ESCALATOR_DOWN:
-                if self.validate_and_place_escalator(row, col, self.current_tile):
-                    grid[row][col] = self.current_tile
-            else:
-                # Remove related escalators from adjacent floors before placing tile
-                self.remove_escalators_from_adjacent_floors(row, col)
-                grid[row][col] = self.current_tile
+        self._place_tile(grid, my // GRID_SIZE, mx // GRID_SIZE)
+        self.store_manager.rescan()
 
-    def draw(self,screen):
+    def fill_rect(self):
+        """Fill the dragged rectangle, overwriting all tiles, then rescan."""
+        grid = self.floor_manager.get_current()
+        x1, y1 = self.start_pos[0] // GRID_SIZE, self.start_pos[1] // GRID_SIZE
+        x2, y2 = self.end_pos[0]   // GRID_SIZE, self.end_pos[1]   // GRID_SIZE
+
+        for row in range(min(y1, y2), max(y1, y2) + 1):
+            for col in range(min(x1, x2), max(x1, x2) + 1):
+                self._place_tile(grid, row, col)
+
+        self.store_manager.rescan()  # single rescan after the whole rect is filled
+
+    # ------------------------------------------------------------------
+    # Entrance / exit query helpers (used by BoidManager)
+    # ------------------------------------------------------------------
+    def get_tile_positions(self, tile_type):
+        """Return pixel-center (x, y) positions for all tiles of tile_type on the current floor."""
+        grid = self.floor_manager.get_current()
+        positions = []
+        for row, tiles in enumerate(grid):
+            for col, tile in enumerate(tiles):
+                if tile == tile_type:
+                    positions.append((
+                        col * GRID_SIZE + GRID_SIZE // 2,
+                        row * GRID_SIZE + GRID_SIZE // 2,
+                    ))
+        return positions
+
+    def has_entrances(self):
+        return bool(self.get_tile_positions(MALL_ENTRANCE))
+
+    def has_exits(self):
+        return bool(self.get_tile_positions(MALL_EXIT))
+
+    # ------------------------------------------------------------------
+    # Draw
+    # ------------------------------------------------------------------
+    def draw(self, screen):
         grid = self.floor_manager.get_current()
         for y, row in enumerate(grid):
             for x, tile in enumerate(row):
-                rect = pygame.Rect(x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE)
-
-                color = (50, 50, 50)
-                if tile == WALKABLE:
-                    color = (200, 200, 200)
-                elif tile == STORE:
-                    color = (0, 150, 255)
-                elif tile == ESCALATOR_UP:
-                    color = (255, 200, 0)
-                elif tile == ESCALATOR_DOWN:
-                    color = (255, 100, 0)
-                elif tile == DOOR:
-                    color = (0, 255, 0)
-                elif tile == DOOR:
-                    color = (0, 255, 0)
-
+                rect  = pygame.Rect(x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE)
+                color = TILES_COLORS.get(tile, (80, 80, 80))
                 pygame.draw.rect(screen, color, rect)
-                pygame.draw.rect(screen, (30,30,30), rect, 1)
-        # preview rectangle
+                pygame.draw.rect(screen, (30, 30, 30), rect, 1)
+
+        # Drag-rectangle preview
         if self.dragging and self.start_pos and self.end_pos:
             rect = pygame.Rect(
                 self.start_pos,
                 (self.end_pos[0] - self.start_pos[0],
-                self.end_pos[1] - self.start_pos[1])
+                 self.end_pos[1] - self.start_pos[1])
             )
             rect.normalize()
-
-            pygame.draw.rect(screen, (255,255,255), rect, 2)
+            pygame.draw.rect(screen, (255, 255, 255), rect, 2)
