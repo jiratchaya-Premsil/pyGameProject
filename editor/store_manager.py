@@ -4,77 +4,114 @@ from config import *
 
 class StoreManager:
     """
-    Scans the current floor and groups contiguous STORE tiles (4-directional)
-    into individual stores, each with a unique ID.
+    Scans ALL floors and groups contiguous tiles of the same type
+    (4-directional) into individual logical units.
 
-    Call rescan() after any tile edit to keep store data up to date.
+    - STORE tiles   → grouped into stores with unique IDs
+    - MALL_ENTRANCE → grouped into entrance zones (count only, no ID)
+    - MALL_EXIT     → grouped into exit zones (count only, no ID)
+
+    Call rescan() after any tile edit or floor add/remove to keep data
+    up to date.
 
     Data:
-        stores      : dict[store_id -> set of (row, col)]
-        tile_to_store: dict[(row, col) -> store_id]
+        stores        : dict[store_id -> set of (floor, row, col)]
+        tile_to_store : dict[(floor, row, col) -> store_id]
+        _entrance_count : int
+        _exit_count     : int
     """
 
     def __init__(self, floor_manager):
         self.floor_manager = floor_manager
-        self.stores: dict[int, set] = {}        # store_id -> {(row,col), ...}
-        self.tile_to_store: dict[tuple, int] = {}  # (row,col) -> store_id
+        self.stores: dict[int, set] = {}
+        self.tile_to_store: dict[tuple, int] = {}
         self._next_id = 1
+        self._entrance_count = 0
+        self._exit_count = 0
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def rescan(self):
-        """Full BFS rescan of the current floor. Call after every tile edit."""
+        """Full BFS rescan across ALL floors. Call after every tile edit or floor change."""
         self.stores.clear()
         self.tile_to_store.clear()
+        self._entrance_count = 0
+        self._exit_count = 0
 
-        grid = self.floor_manager.get_current()
-        visited = set()
+        floors = self.floor_manager.floors
 
-        for row in range(len(grid)):
-            for col in range(len(grid[0])):
-                if grid[row][col] == STORE and (row, col) not in visited:
-                    store_id = self._next_id
-                    self._next_id += 1
-                    cells = self._bfs(grid, row, col, visited)
-                    self.stores[store_id] = cells
-                    for cell in cells:
-                        self.tile_to_store[cell] = store_id
+        visited_store    = set()
+        visited_entrance = set()
+        visited_exit     = set()
+
+        for floor_idx, grid in enumerate(floors):
+            for row in range(len(grid)):
+                for col in range(len(grid[0])):
+                    tile = grid[row][col]
+                    key  = (floor_idx, row, col)
+
+                    if tile == STORE and key not in visited_store:
+                        store_id = self._next_id
+                        self._next_id += 1
+                        cells = self._bfs(floors, floor_idx, row, col, STORE, visited_store)
+                        self.stores[store_id] = cells
+                        for cell in cells:
+                            self.tile_to_store[cell] = store_id
+
+                    elif tile == MALL_ENTRANCE and key not in visited_entrance:
+                        self._bfs(floors, floor_idx, row, col, MALL_ENTRANCE, visited_entrance)
+                        self._entrance_count += 1
+
+                    elif tile == MALL_EXIT and key not in visited_exit:
+                        self._bfs(floors, floor_idx, row, col, MALL_EXIT, visited_exit)
+                        self._exit_count += 1
 
     def store_count(self):
         return len(self.stores)
 
-    def get_store_id(self, row, col):
-        """Return the store ID at (row, col), or None if not a store tile."""
-        return self.tile_to_store.get((row, col))
+    def entrance_count(self):
+        return self._entrance_count
+
+    def exit_count(self):
+        return self._exit_count
+
+    def get_store_id(self, floor_idx, row, col):
+        """Return the store ID at (floor, row, col), or None if not a store tile."""
+        return self.tile_to_store.get((floor_idx, row, col))
 
     def get_store_cells(self, store_id):
-        """Return the set of (row, col) cells belonging to store_id."""
+        """Return the set of (floor, row, col) cells belonging to store_id."""
         return self.stores.get(store_id, set())
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
-    def _bfs(self, grid, start_row, start_col, visited):
-        """Flood-fill from (start_row, start_col), returns all connected STORE cells."""
+    def _bfs(self, floors, start_floor, start_row, start_col, tile_type, visited):
+        """
+        Flood-fill from (start_floor, start_row, start_col) for tile_type.
+        Spreads within the same floor only (stores don't merge across floors).
+        Returns all connected cells as a set of (floor, row, col).
+        """
         cells = set()
-        queue = deque()
-        queue.append((start_row, start_col))
-        visited.add((start_row, start_col))
+        queue = [(start_floor, start_row, start_col)]
+        visited.add((start_floor, start_row, start_col))
 
+        grid = floors[start_floor]
         rows = len(grid)
         cols = len(grid[0])
 
         while queue:
-            row, col = queue.popleft()
-            cells.add((row, col))
+            f, r, c = queue.pop()
+            cells.add((f, r, c))
 
             for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                nr, nc = row + dr, col + dc
+                nr, nc = r + dr, c + dc
+                key = (f, nr, nc)
                 if (0 <= nr < rows and 0 <= nc < cols
-                        and (nr, nc) not in visited
-                        and grid[nr][nc] == STORE):
-                    visited.add((nr, nc))
-                    queue.append((nr, nc))
+                        and key not in visited
+                        and floors[f][nr][nc] == tile_type):
+                    visited.add(key)
+                    queue.append(key)
 
         return cells

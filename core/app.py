@@ -61,13 +61,15 @@ class App:
                 self.boids.clear()
                 print("[SIM] Simulation STOPPED — all boids removed")
 
-         # ---- Floor navigation ----
-        # q / e: add / remove top floor
+        # ---- Floor navigation ----
+        # q / e: remove / add top floor
         if key == pygame.K_q:
             fm.remove_top_floor()
+            self.store_manager.rescan()
         if key == pygame.K_e:
             fm.add_floor()
- 
+            self.store_manager.rescan()
+
         # a / d: go to lower / upper floor
         if key == pygame.K_a:
             fm.current_floor = max(0, fm.current_floor - 1)
@@ -95,9 +97,7 @@ class App:
     # ------------------------------------------------------------------
     def draw(self):
         self.screen.fill(TILES_COLORS[EMPTY])
-
-        # Always draw the grid/editor
-        self.editor.draw(self.screen)
+        self.editor.draw(self.screen, self.show_grid)
 
         # Draw boids only while running
         if self.sim_state == SIM_START:
@@ -111,12 +111,11 @@ class App:
     # ------------------------------------------------------------------
     def draw_ui(self):
         fm = self.floor_manager
-        grid = fm.get_current()
+        sm = self.store_manager
 
-        # ---- Collect stats ----
-        store_count    = sum(row.count(STORE)         for row in grid)
-        entrance_count = sum(row.count(MALL_ENTRANCE) for row in grid)
-        exit_count     = sum(row.count(MALL_EXIT)     for row in grid)
+        store_count    = sm.store_count()
+        entrance_count = sm.entrance_count()
+        exit_count     = sm.exit_count()
         boid_count     = len(self.boids.boids)
         fps            = int(self.clock.get_fps())
         tile_name      = TILES.get(self.editor.current_tile, "UNKNOWN")
@@ -154,6 +153,6 @@ class App:
             self.screen.blit(err_surf, (10, HEIGHT - 30))
 
         # ---- Key hints (bottom-right) ----
-        hints = "[Space] Start/Stop  [A/D or Q/E] Floor  [G] Grid  [1-6] Tile"
+        hints = "[Space] Start/Stop  [Q/E] Add/Remove Floor  [A/D] Prev/Next Floor  [G] Grid  [0-6] Tile"
         hint_surf = self.font.render(hints, True, (160, 160, 160))
         self.screen.blit(hint_surf, (WIDTH - hint_surf.get_width() - 8, HEIGHT - 24))

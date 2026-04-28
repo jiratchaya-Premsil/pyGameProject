@@ -147,7 +147,7 @@ class GridEditor:
             for col in range(min(x1, x2), max(x1, x2) + 1):
                 self._place_tile(grid, row, col)
 
-        self.store_manager.rescan()  # single rescan after the whole rect is filled
+        self.store_manager.rescan()
 
     # ------------------------------------------------------------------
     # Entrance / exit query helpers (used by BoidManager)
@@ -174,14 +174,19 @@ class GridEditor:
     # ------------------------------------------------------------------
     # Draw
     # ------------------------------------------------------------------
-    def draw(self, screen):
+    def draw(self, screen, show_grid=True):
         grid = self.floor_manager.get_current()
+
+        # EMPTY = 30,30,30
+        GRID_LINE_COLOR = (50, 50, 50)
+
         for y, row in enumerate(grid):
             for x, tile in enumerate(row):
                 rect  = pygame.Rect(x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE)
                 color = TILES_COLORS.get(tile, (80, 80, 80))
                 pygame.draw.rect(screen, color, rect)
-                pygame.draw.rect(screen, (30, 30, 30), rect, 1)
+                if show_grid:
+                    pygame.draw.rect(screen, GRID_LINE_COLOR, rect, 1)
 
         # Drag-rectangle preview
         if self.dragging and self.start_pos and self.end_pos:
